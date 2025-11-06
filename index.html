@@ -30,10 +30,25 @@
         }
         @media print {
             body {
-                background-color: white;
+                background-color: white !important;
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
             }
             .no-print {
                 display: none !important;
+            }
+            #report-container {
+                padding: 0;
+                margin: 0;
+            }
+            #report-content {
+                box-shadow: none !important;
+                border: none !important;
+                margin: 0 !important;
+                padding: 0 !important;
+                border-radius: 0 !important;
+                width: 100%;
+                max-width: 100%;
             }
         }
     </style>

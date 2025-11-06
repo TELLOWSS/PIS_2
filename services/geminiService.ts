@@ -133,7 +133,7 @@ export async function analyzeWorkerRiskAssessment(base64Image: string, mimeType:
         const parsedResult = JSON.parse(jsonText) as Omit<WorkerRecord, 'id' | 'originalImage'>[];
         return parsedResult.map(record => ({
             ...record, 
-            id: `${record.date}-${record.name}-${Math.random()}`,
+            id: `${record.date}-${record.name}`,
             originalImage: base64Image
         }));
     } catch (e) {

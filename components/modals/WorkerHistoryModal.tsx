@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useEffect } from 'react';
 import type { WorkerRecord } from '../../types';
 
@@ -25,9 +26,15 @@ export const WorkerHistoryModal: React.FC<WorkerHistoryModalProps> = ({ workerNa
     const [editableRecord, setEditableRecord] = useState<WorkerRecord>(initialSelectedRecord);
 
     useEffect(() => {
-        setSelectedRecord(initialSelectedRecord);
-        setEditableRecord(initialSelectedRecord);
-    }, [initialSelectedRecord]);
+        // This effect ensures that if the underlying record data changes (e.g., from a re-analysis),
+        // the view inside the modal updates accordingly.
+        const latestVersionOfSelectedRecord = allRecords.find(r => r.id === selectedRecord.id);
+        if (latestVersionOfSelectedRecord) {
+            setSelectedRecord(latestVersionOfSelectedRecord);
+            setEditableRecord(latestVersionOfSelectedRecord);
+        }
+    }, [allRecords, selectedRecord.id]);
+    
 
     const workerHistory = useMemo(() => {
         return allRecords
@@ -58,6 +65,7 @@ export const WorkerHistoryModal: React.FC<WorkerHistoryModalProps> = ({ workerNa
 
     const handleSave = () => {
         onUpdateRecord(editableRecord);
+        alert('저장되었습니다.');
     }
     
     return (
@@ -82,19 +90,17 @@ export const WorkerHistoryModal: React.FC<WorkerHistoryModalProps> = ({ workerNa
                                 className={`w-full text-left p-3 rounded-lg flex items-center justify-between transition-colors ${record.id === selectedRecord.id ? 'bg-blue-100 shadow' : 'hover:bg-slate-100'}`}
                             >
                                 <div className="flex items-center space-x-3">
-                                    <div className="flex-shrink-0 h-10 w-10 rounded-md bg-slate-200 flex items-center justify-center">
+                                    <div className="flex-shrink-0 h-10 w-10 rounded-md bg-white border border-slate-200 flex items-center justify-center">
                                         {record.originalImage ? (
-                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-slate-500" viewBox="0 0 20 20" fill="currentColor">
-                                                <path fillRule="evenodd" d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm12 12H4l4-8 3 6 2-4 3 6z" clipRule="evenodd" />
-                                            </svg>
+                                            <img src={`data:image/jpeg;base64,${record.originalImage}`} alt="record thumbnail" className="h-full w-full object-cover rounded-md" />
                                         ) : (
                                             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 8v10a2 2 0 002 2h12a2 2 0 002-2V8m-6 4l-3-3m0 0l-3 3m3-3v11" />
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                                             </svg>
                                         )}
                                     </div>
                                     <div>
-                                        <p className={`font-semibold ${record.id === selectedRecord.id ? 'text-blue-700' : 'text-slate-700'}`}>{record.date}</p>
+                                        <p className={`font-semibold text-sm ${record.id === selectedRecord.id ? 'text-blue-700' : 'text-slate-700'}`}>{record.date}</p>
                                         <p className="text-xs text-slate-500">{record.jobField}</p>
                                     </div>
                                 </div>
@@ -114,7 +120,7 @@ export const WorkerHistoryModal: React.FC<WorkerHistoryModalProps> = ({ workerNa
                                 <p className={`text-4xl font-bold ${getSafetyLevelClass(selectedRecord.safetyLevel).text}`}>{selectedRecord.safetyScore}점</p>
                                 {scoreDifference !== null && (
                                      <p className={`text-sm font-semibold ${scoreDifference >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                                        {scoreDifference >= 0 ? '▲' : '▼'} {Math.abs(scoreDifference).toFixed(1)} (이전 {previousScore}점)
+                                        {scoreDifference >= 0 ? '▲' : '▼'} {Math.abs(scoreDifference)} (이전 {previousScore}점)
                                     </p>
                                 )}
                             </div>
@@ -152,7 +158,7 @@ export const WorkerHistoryModal: React.FC<WorkerHistoryModalProps> = ({ workerNa
                             </div>
                              <div>
                                 <h4 className="font-semibold text-slate-700 mb-2">종합 인사이트</h4>
-                                 <p className="text-sm text-slate-600 bg-white p-4 rounded-lg border border-slate-200">{editableRecord.aiInsights}</p>
+                                 <p className="text-sm text-slate-600 bg-white p-4 rounded-lg border border-slate-200 leading-relaxed">{editableRecord.aiInsights}</p>
                             </div>
                         </div>
                     </main>

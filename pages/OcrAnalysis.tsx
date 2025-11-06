@@ -1,9 +1,12 @@
+
+
 import React, { useState, useCallback, useMemo, useRef } from 'react';
 import { FileUpload } from '../components/FileUpload';
 import { Spinner } from '../components/Spinner';
 import { analyzeWorkerRiskAssessment } from '../services/geminiService';
 import type { WorkerRecord } from '../types';
 import { fileToBase64 } from '../utils/fileUtils';
+import { Tooltip } from '../components/shared/Tooltip';
 
 const getSafetyLevelClass = (level: '초급' | '중급' | '고급') => {
     switch (level) {
@@ -16,11 +19,15 @@ const getSafetyLevelClass = (level: '초급' | '중급' | '고급') => {
 
 interface OcrAnalysisProps {
     onAnalysisComplete: (records: WorkerRecord[]) => void;
-    existingRecords: WorkerRecord[];
+    allRecords: WorkerRecord[];
     onDeleteAll: () => void;
     onImport: (records: WorkerRecord[]) => void;
-    onViewDetails: (record: WorkerRecord) => void;
-    onDeleteRecord: (recordId: string) => void;
+    onViewHistory: (record: WorkerRecord) => void;
+    onViewDetail: (record: WorkerRecord) => void;
+    onDeleteWorker: (workerName: string) => void;
+    onReanalyzeAll: () => void;
+    isReanalyzingAll: boolean;
+    reanalyzeAllProgress: { current: number; total: number };
 }
 
 const SortableHeader: React.FC<{
@@ -41,7 +48,18 @@ const SortableHeader: React.FC<{
 };
 
 
-const OcrAnalysis: React.FC<OcrAnalysisProps> = ({ onAnalysisComplete, existingRecords, onDeleteAll, onImport, onViewDetails, onDeleteRecord }) => {
+const OcrAnalysis: React.FC<OcrAnalysisProps> = ({ 
+    onAnalysisComplete, 
+    allRecords, 
+    onDeleteAll, 
+    onImport, 
+    onViewHistory,
+    onViewDetail,
+    onDeleteWorker,
+    onReanalyzeAll,
+    isReanalyzingAll,
+    reanalyzeAllProgress,
+}) => {
     const [files, setFiles] = useState<File[]>([]);
     const [nationality, setNationality] = useState<string>('베트남');
     const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
@@ -93,14 +111,23 @@ const OcrAnalysis: React.FC<OcrAnalysisProps> = ({ onAnalysisComplete, existingR
         setFiles([]);
     }, [files, nationality, onAnalysisComplete]);
 
-    const uniqueJobFields = useMemo(() => ['전체', ...new Set(existingRecords.map(r => r.jobField))], [existingRecords]);
+    const uniqueJobFields = useMemo(() => ['전체', ...new Set(allRecords.map(r => r.jobField))], [allRecords]);
 
-    const sortedAndFilteredRecords = useMemo(() => {
-        let records = [...existingRecords];
-
+    const latestRecordsByWorker = useMemo(() => {
+        const latestRecordsMap = new Map<string, WorkerRecord>();
+        
+        let recordsToProcess = allRecords;
         if (jobFieldFilter !== '전체') {
-            records = records.filter(r => r.jobField === jobFieldFilter);
+            recordsToProcess = recordsToProcess.filter(r => r.jobField === jobFieldFilter);
         }
+
+        recordsToProcess.forEach(record => {
+            if (!latestRecordsMap.has(record.name) || new Date(record.date) > new Date(latestRecordsMap.get(record.name)!.date)) {
+                latestRecordsMap.set(record.name, record);
+            }
+        });
+
+        let records = Array.from(latestRecordsMap.values());
 
         if (sortConfig.key !== 'none') {
             records.sort((a, b) => {
@@ -112,7 +139,7 @@ const OcrAnalysis: React.FC<OcrAnalysisProps> = ({ onAnalysisComplete, existingR
             });
         }
         return records;
-    }, [existingRecords, jobFieldFilter, sortConfig]);
+    }, [allRecords, jobFieldFilter, sortConfig]);
 
     const requestSort = (key: keyof WorkerRecord) => {
         let direction: 'ascending' | 'descending' = 'ascending';
@@ -123,7 +150,7 @@ const OcrAnalysis: React.FC<OcrAnalysisProps> = ({ onAnalysisComplete, existingR
     };
 
     const handleExport = (format: 'json' | 'csv') => {
-        if (existingRecords.length === 0) {
+        if (allRecords.length === 0) {
             alert('내보낼 데이터가 없습니다.');
             return;
         }
@@ -134,12 +161,12 @@ const OcrAnalysis: React.FC<OcrAnalysisProps> = ({ onAnalysisComplete, existingR
         let mimeType: string;
 
         if (format === 'json') {
-            dataStr = JSON.stringify(existingRecords, null, 2);
+            dataStr = JSON.stringify(allRecords, null, 2);
             fileName = `psi_backup_${date}.json`;
             mimeType = 'application/json';
         } else {
             const headers = ['이름', '공종', '국적', '날짜', '안전 점수', '안전 수준', '취약 분야'];
-            const rows = existingRecords.map(r => [
+            const rows = allRecords.map(r => [
                 r.name, r.jobField, r.nationality, r.date, r.safetyScore, r.safetyLevel, r.weakAreas.join('; ')
             ]);
             dataStr = [headers.join(','), ...rows.map(row => row.join(','))].join('\n');
@@ -183,18 +210,34 @@ const OcrAnalysis: React.FC<OcrAnalysisProps> = ({ onAnalysisComplete, existingR
     };
     
     return (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="space-y-6">
             <input type="file" ref={importInputRef} className="hidden" accept=".json" onChange={handleFileImport} />
-            <div className="lg:col-span-2 space-y-6">
-                <div className="bg-white p-6 rounded-lg shadow-sm">
-                     <FileUpload 
-                        onFilesChange={handleFilesChange}
-                        onAnalyze={handleAnalyze}
-                        isAnalyzing={isAnalyzing}
-                        fileCount={files.length}
-                    />
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                 <div className="lg:col-span-2 space-y-6">
+                    <div className="bg-white p-6 rounded-lg shadow-sm">
+                        <FileUpload 
+                            onFilesChange={handleFilesChange}
+                            onAnalyze={handleAnalyze}
+                            isAnalyzing={isAnalyzing}
+                            fileCount={files.length}
+                        />
+                    </div>
                 </div>
-                <div className="bg-white p-6 rounded-lg shadow-sm">
+                 <div className="lg:col-span-1 space-y-6">
+                    <div className="bg-white p-6 rounded-lg shadow-sm">
+                        <h3 className="text-lg font-semibold mb-4">처리 상태</h3>
+                         <div className="p-4 bg-slate-50 rounded-lg text-center">
+                            <div className="text-slate-500 text-sm">
+                                {isAnalyzing ? `분석 진행 중... (${reanalyzeAllProgress.current}/${reanalyzeAllProgress.total})` 
+                                : isReanalyzingAll ? `전체 재분석 진행 중... (${reanalyzeAllProgress.current}/${reanalyzeAllProgress.total})`
+                                : `대기 중. 파일을 업로드하면 분석이 시작됩니다.`}
+                            </div>
+                         </div>
+                    </div>
+                </div>
+            </div>
+
+            <div className="bg-white p-6 rounded-lg shadow-sm">
                     <h3 className="text-lg font-semibold mb-1">안전 수준 및 점수 기준</h3>
                     <p className="text-sm text-slate-500 mb-4">안전 이해도 점수는 위험성 평가 기록지의 응답을 기반으로 정확성, 구체성을 종합하여 AI가 산정합니다.</p>
                     <div className="space-y-3 text-sm">
@@ -211,56 +254,12 @@ const OcrAnalysis: React.FC<OcrAnalysisProps> = ({ onAnalysisComplete, existingR
                             <span className="text-slate-600">내용 이해도가 부족하거나, 기재 내용이 매우 부실함.</span>
                         </div>
                     </div>
-                </div>
             </div>
-
-            <div className="lg:col-span-1 space-y-6">
-                <div className="bg-white p-6 rounded-lg shadow-sm">
-                     <h3 className="text-lg font-semibold mb-4">처리 상태</h3>
-                    <div className="space-y-4">
-                        <div>
-                            <label htmlFor="nationality" className="block text-sm font-medium text-slate-700 mb-1">근로자 국적</label>
-                            <select 
-                                id="nationality" 
-                                name="nationality" 
-                                value={nationality}
-                                onChange={(e) => setNationality(e.target.value)}
-                                className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-slate-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md"
-                                disabled={isAnalyzing}
-                            >
-                                {nationalites.map(nat => <option key={nat} value={nat}>{nat}</option>)}
-                            </select>
-                        </div>
-                        <button
-                            onClick={handleAnalyze}
-                            disabled={isAnalyzing || files.length === 0}
-                            className="w-full flex justify-center items-center py-3 px-4 border border-transparent rounded-lg shadow-sm text-base font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:bg-slate-400 disabled:cursor-not-allowed"
-                        >
-                            {isAnalyzing ? <Spinner /> : `AI 분석 시작 (${files.length}개 파일)`}
-                        </button>
-
-                         {isAnalyzing && (
-                            <div className="text-center p-4 bg-slate-50 rounded-lg">
-                                <p className="text-sm font-semibold text-blue-600">{analysisProgress}</p>
-                                <div className="w-full bg-slate-200 rounded-full h-2.5 mt-2">
-                                    <div className="bg-blue-600 h-2.5 rounded-full" style={{ width: `${(analyzedCount / files.length) * 100}%` }}></div>
-                                </div>
-                                <p className="text-xs text-slate-500 mt-1">{analyzedCount} / {files.length} 완료</p>
-                            </div>
-                        )}
-                         {error && (
-                            <div className="mt-4 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-lg" role="alert">
-                                <p className="text-sm"><strong className="font-bold">오류: </strong>{error}</p>
-                            </div>
-                        )}
-                    </div>
-                </div>
-            </div>
-
-            <div className="lg:col-span-3 bg-white p-6 rounded-lg shadow-sm">
+            
+            <div className="bg-white p-6 rounded-lg shadow-sm">
                 <div className="flex flex-wrap gap-4 justify-between items-center mb-4">
-                    <div className="flex items-center space-x-4">
-                         <h3 className="text-lg font-semibold">분석 기록 ({sortedAndFilteredRecords.length}건)</h3>
+                     <div className="flex items-center space-x-4">
+                         <h3 className="text-lg font-semibold">분석 기록 ({latestRecordsByWorker.length}명)</h3>
                          <select 
                             id="jobFieldFilter" 
                             value={jobFieldFilter}
@@ -271,14 +270,38 @@ const OcrAnalysis: React.FC<OcrAnalysisProps> = ({ onAnalysisComplete, existingR
                         </select>
                     </div>
                     <div className="flex items-center flex-wrap gap-2">
-                        <button onClick={() => alert('수동 추가 기능은 준비 중입니다.')} className="px-4 py-2 text-sm font-semibold text-white bg-blue-600 rounded-md hover:bg-blue-700">
-                            + 수동 추가
+                        <button onClick={() => alert('수동 추가 기능은 준비 중입니다.')} className="px-4 py-2 text-sm font-semibold text-white bg-blue-600 rounded-md hover:bg-blue-700 flex items-center space-x-2">
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 5a1 1 0 011 1v3h3a1 1 0 110 2h-3v3a1 1 0 11-2 0v-3H6a1 1 0 110-2h3V6a1 1 0 011-1z" clipRule="evenodd" /></svg>
+                            <span>수동 추가</span>
                         </button>
-                         <button onClick={() => handleExport('csv')} className="px-3 py-2 text-sm font-medium bg-white border border-slate-300 rounded-md hover:bg-slate-50">CSV 내보내기</button>
-                         <button onClick={() => handleExport('json')} className="px-3 py-2 text-sm font-medium bg-white border border-slate-300 rounded-md hover:bg-slate-50">JSON 백업</button>
-                         <button onClick={handleTriggerImport} className="px-3 py-2 text-sm font-medium bg-white border border-slate-300 rounded-md hover:bg-slate-50">JSON 불러오기</button>
-                         <button onClick={() => alert('전체 재분석 기능은 준비 중입니다.')} className="px-3 py-2 text-sm font-medium text-yellow-900 bg-yellow-400 border border-yellow-500 rounded-md hover:bg-yellow-500 hover:text-white">전체 재분석</button>
-                         <button onClick={onDeleteAll} className="px-3 py-2 text-sm font-medium text-red-700 bg-red-100 border border-red-200 rounded-md hover:bg-red-200">전체 삭제</button>
+                         <button onClick={handleTriggerImport} className="px-3 py-2 text-sm font-medium bg-white border border-slate-300 rounded-md hover:bg-slate-50 flex items-center space-x-2">
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm11.707 5.707a1 1 0 00-1.414-1.414L10 10.586 6.707 7.293a1 1 0 00-1.414 1.414l4 4a1 1 0 001.414 0l4-4z" /></svg>
+                            <span>복원</span>
+                         </button>
+                         <button onClick={() => handleExport('json')} className="px-3 py-2 text-sm font-medium bg-white border border-slate-300 rounded-md hover:bg-slate-50 flex items-center space-x-2">
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zM6.293 6.707a1 1 0 010-1.414l3-3a1 1 0 011.414 0l3 3a1 1 0 01-1.414 1.414L11 5.414V13a1 1 0 11-2 0V5.414L7.707 6.707a1 1 0 01-1.414 0z" clipRule="evenodd" /></svg>
+                            <span>전체 백업</span>
+                        </button>
+                         <button onClick={() => handleExport('csv')} className="px-3 py-2 text-sm font-medium bg-white border border-slate-300 rounded-md hover:bg-slate-50 flex items-center space-x-2">
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clipRule="evenodd" /></svg>
+                            <span>CSV</span>
+                         </button>
+                         <button onClick={onReanalyzeAll} disabled={isReanalyzingAll || allRecords.length === 0} className="px-3 py-2 text-sm font-medium text-yellow-900 bg-yellow-400 border border-yellow-500 rounded-md hover:bg-yellow-500 hover:text-white disabled:bg-slate-300 disabled:text-slate-500 disabled:cursor-not-allowed flex items-center space-x-2">
+                            {isReanalyzingAll ? (
+                                <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                            ) : (
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path d="M10 2a8 8 0 00-6.32 12.905l-1.42 1.42a1 1 0 001.414 1.414l1.42-1.42A8 8 0 1010 2zM8 7a1 1 0 011-1h.01a1 1 0 110 2H9a1 1 0 01-1-1zm4.472 2.053a1 1 0 01-.224 1.394l-2 1.5a1 1 0 01-1.248-.023l-2-2a1 1 0 011.248-1.574l1.23.922.99-1.32a1 1 0 011.394.224z" /></svg>
+                            )}
+                            <span>전체 재분석</span>
+                        </button>
+                         <button 
+                            onClick={onDeleteAll} 
+                            disabled={allRecords.length === 0}
+                            className="px-3 py-2 text-sm font-medium text-red-700 bg-red-100 border border-red-200 rounded-md hover:bg-red-200 disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed disabled:border-slate-200 flex items-center space-x-2"
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" /></svg>
+                            <span>전체 삭제</span>
+                        </button>
                     </div>
                 </div>
                 <div className="overflow-x-auto">
@@ -288,16 +311,16 @@ const OcrAnalysis: React.FC<OcrAnalysisProps> = ({ onAnalysisComplete, existingR
                                 <SortableHeader columnKey="name" title="이름" sortConfig={sortConfig} requestSort={requestSort} />
                                 <th scope="col" className="px-6 py-3">공종</th>
                                 <th scope="col" className="px-6 py-3">국적</th>
-                                <SortableHeader columnKey="date" title="날짜" sortConfig={sortConfig} requestSort={requestSort} />
-                                <SortableHeader columnKey="safetyScore" title="안전 점수" sortConfig={sortConfig} requestSort={requestSort} className="text-center" />
+                                <SortableHeader columnKey="date" title="최신 평가일" sortConfig={sortConfig} requestSort={requestSort} />
+                                <SortableHeader columnKey="safetyScore" title="최신 안전 점수" sortConfig={sortConfig} requestSort={requestSort} className="text-center" />
                                 <th scope="col" className="px-6 py-3 text-center">안전 수준</th>
                                 <th scope="col" className="px-6 py-3">상태</th>
                                 <th scope="col" className="px-6 py-3 text-center">작업</th>
                             </tr>
                         </thead>
                         <tbody>
-                            {sortedAndFilteredRecords.length > 0 ? (
-                                sortedAndFilteredRecords.map((record) => (
+                            {latestRecordsByWorker.length > 0 ? (
+                                latestRecordsByWorker.map((record) => (
                                     <tr key={record.id} className="bg-white border-b hover:bg-slate-50">
                                         <th scope="row" className="px-6 py-4 font-medium text-slate-900 whitespace-nowrap">{record.name}</th>
                                         <td className="px-6 py-4">{record.jobField}</td>
@@ -310,9 +333,24 @@ const OcrAnalysis: React.FC<OcrAnalysisProps> = ({ onAnalysisComplete, existingR
                                             </span>
                                         </td>
                                         <td className="px-6 py-4 text-green-600 font-semibold">유효</td>
-                                        <td className="px-6 py-4 flex space-x-2 justify-center">
-                                            <button onClick={() => onViewDetails(record)} className="text-blue-600 hover:underline">보기</button>
-                                            <button onClick={() => onDeleteRecord(record.id)} className="text-red-600 hover:underline">삭제</button>
+                                        <td className="px-6 py-4">
+                                            <div className="flex space-x-1 justify-center">
+                                                <Tooltip text="상세보기">
+                                                    <button onClick={() => onViewDetail(record)} className="p-2 text-slate-500 rounded-full hover:bg-slate-200 hover:text-slate-800 transition-colors">
+                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M10 12a2 2 0 100-4 2 2 0 000 4z" /><path fillRule="evenodd" d="M.458 10C3.732 4.943 9.522 3 10 3s6.268 1.943 9.542 7c-3.274 5.057-9.064 7-9.542 7S3.732 15.057.458 10zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clipRule="evenodd" /></svg>
+                                                    </button>
+                                                </Tooltip>
+                                                <Tooltip text="히스토리 보기">
+                                                    <button onClick={() => onViewHistory(record)} className="p-2 text-slate-500 rounded-full hover:bg-slate-200 hover:text-slate-800 transition-colors">
+                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.414-1.415L11 9.586V6z" clipRule="evenodd" /></svg>
+                                                    </button>
+                                                </Tooltip>
+                                                <Tooltip text="근로자 모든 기록 삭제">
+                                                    <button onClick={() => onDeleteWorker(record.name)} className="p-2 text-slate-500 rounded-full hover:bg-red-100 hover:text-red-600 transition-colors">
+                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" /></svg>
+                                                    </button>
+                                                </Tooltip>
+                                            </div>
                                         </td>
                                     </tr>
                                 ))
@@ -320,7 +358,7 @@ const OcrAnalysis: React.FC<OcrAnalysisProps> = ({ onAnalysisComplete, existingR
                                 <tr>
                                     <td colSpan={8} className="text-center py-12 text-slate-500">
                                         <p className="font-semibold">표시할 기록이 없습니다.</p>
-                                        <p className="text-sm mt-1">{existingRecords.length > 0 ? '필터 조건을 변경해보세요.' : '위험성 평가 기록지를 업로드하여 분석을 시작하세요.'}</p>
+                                        <p className="text-sm mt-1">{allRecords.length > 0 ? '필터 조건을 변경해보세요.' : '위험성 평가 기록지를 업로드하여 분석을 시작하세요.'}</p>
                                     </td>
                                 </tr>
                             )}

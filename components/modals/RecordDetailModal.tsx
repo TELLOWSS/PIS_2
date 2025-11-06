@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import type { WorkerRecord } from '../../types';
 import { CircularProgress } from '../shared/CircularProgress';
 import { CollapsibleSection } from '../shared/CollapsibleSection';
-import { Spinner } from '../Spinner';
+import { fileToBase64 } from '../../utils/fileUtils';
 
 interface RecordDetailModalProps {
     record: WorkerRecord;
@@ -16,6 +16,7 @@ interface RecordDetailModalProps {
 
 export const RecordDetailModal: React.FC<RecordDetailModalProps> = ({ record: initialRecord, onClose, onBack, onUpdateRecord, onOpenReport, onReanalyze, isReanalyzing }) => {
     const [record, setRecord] = useState<WorkerRecord>(initialRecord);
+    const fileInputRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => {
         setRecord(initialRecord);
@@ -24,6 +25,28 @@ export const RecordDetailModal: React.FC<RecordDetailModalProps> = ({ record: in
     const handleSave = () => {
         onUpdateRecord(record);
         alert("저장 완료!");
+    };
+    
+    const handleImageChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+
+        try {
+            const base64Image = await fileToBase64(file);
+            setRecord(prev => ({ ...prev, originalImage: base64Image }));
+            alert('이미지가 변경되었습니다. 저장 버튼을 눌러 확정해주세요.');
+        } catch (error) {
+            console.error("Error converting file to base64:", error);
+            alert("이미지를 처리하는 중 오류가 발생했습니다.");
+        }
+        event.target.value = ''; // Reset file input
+    };
+
+    const handleImageDelete = () => {
+        if (window.confirm('정말로 이 이미지를 삭제하시겠습니까?')) {
+            setRecord(prev => ({ ...prev, originalImage: undefined }));
+             alert('이미지가 삭제되었습니다. 저장 버튼을 눌러 확정해주세요.');
+        }
     };
 
     const handleTTS = (text: string) => {
@@ -53,8 +76,8 @@ export const RecordDetailModal: React.FC<RecordDetailModalProps> = ({ record: in
                          <button onClick={() => onOpenReport(record)} className="px-4 py-2 text-sm font-semibold text-white bg-red-600 rounded-md hover:bg-red-700">PDF 생성</button>
                          <button 
                             onClick={() => onReanalyze(record)}
-                            disabled={isReanalyzing}
-                            className="px-4 py-2 text-sm font-semibold text-white bg-blue-600 rounded-md hover:bg-blue-700 flex items-center disabled:bg-slate-400"
+                            disabled={isReanalyzing || !record.originalImage}
+                            className="px-4 py-2 text-sm font-semibold text-white bg-blue-600 rounded-md hover:bg-blue-700 flex items-center disabled:bg-slate-400 disabled:cursor-not-allowed"
                         >
                             {isReanalyzing && <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>}
                             {isReanalyzing ? '분석 중...' : 'AI 재분석'}
@@ -68,7 +91,14 @@ export const RecordDetailModal: React.FC<RecordDetailModalProps> = ({ record: in
                 <div className="flex-1 flex overflow-hidden">
                     {/* Left: Image */}
                     <div className="w-1/2 p-4 bg-slate-100">
-                        <div className="w-full h-full bg-slate-200 rounded-lg flex items-center justify-center overflow-hidden">
+                        <div className="relative w-full h-full bg-slate-200 rounded-lg flex items-center justify-center overflow-hidden group">
+                             <input
+                                type="file"
+                                ref={fileInputRef}
+                                className="hidden"
+                                accept="image/png, image/jpeg"
+                                onChange={handleImageChange}
+                            />
                             {record.originalImage ? (
                                 <img 
                                     src={`data:image/jpeg;base64,${record.originalImage}`} 
@@ -76,8 +106,32 @@ export const RecordDetailModal: React.FC<RecordDetailModalProps> = ({ record: in
                                     className="w-full h-full object-contain"
                                 />
                             ) : (
-                                <p className="text-slate-500 font-semibold">[위험성 평가 기록지 원본 이미지 없음]</p>
+                                <div className="text-center">
+                                    <p className="text-slate-500 font-semibold">[원본 이미지 없음]</p>
+                                    <button onClick={() => fileInputRef.current?.click()} className="mt-2 px-4 py-2 text-sm font-semibold text-white bg-blue-500 rounded-md hover:bg-blue-600">
+                                        이미지 추가
+                                    </button>
+                                </div>
                             )}
+                            {/* Image management overlay */}
+                            <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-50 transition-opacity duration-300 flex items-center justify-center space-x-4 opacity-0 group-hover:opacity-100">
+                                <button 
+                                    onClick={() => fileInputRef.current?.click()}
+                                    className="px-4 py-2 text-sm font-semibold text-black bg-white rounded-md hover:bg-slate-200 flex items-center space-x-2"
+                                >
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M17.414 2.586a2 2 0 00-2.828 0L7 10.172V13h2.828l7.586-7.586a2 2 0 000-2.828z" /><path fillRule="evenodd" d="M2 6a2 2 0 012-2h4a1 1 0 010 2H4v10h10v-4a1 1 0 112 0v4a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" clipRule="evenodd" /></svg>
+                                    <span>이미지 교체/추가</span>
+                                </button>
+                                {record.originalImage && (
+                                    <button 
+                                        onClick={handleImageDelete}
+                                        className="px-4 py-2 text-sm font-semibold text-white bg-red-600 rounded-md hover:bg-red-700 flex items-center space-x-2"
+                                    >
+                                         <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" /></svg>
+                                         <span>이미지 삭제</span>
+                                    </button>
+                                )}
+                            </div>
                         </div>
                     </div>
                     {/* Right: Details */}

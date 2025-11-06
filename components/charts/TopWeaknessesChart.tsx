@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo } from 'react';
 import type { WorkerRecord } from '../../types';
 
@@ -99,6 +100,7 @@ export const TopWeaknessesChart: React.FC<TopWeaknessesChartProps> = ({ records 
         }, {} as Record<string, number>);
         
         return Object.entries(weaknessCounts)
+            // Fix: Changed to use array destructuring in the sort callback to help TypeScript correctly infer the types for the arithmetic operation.
             .sort(([, countA], [, countB]) => countB - countA)
             .slice(0, 3);
     }, [records]);

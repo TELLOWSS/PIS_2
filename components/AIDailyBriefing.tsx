@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { generateSafetyBriefing } from '../services/geminiService';
 import type { WorkerRecord, SafetyBriefing, HighRiskWorker } from '../types';
@@ -30,6 +31,7 @@ export const AIDailyBriefing: React.FC<AIDailyBriefingProps> = ({ workerRecords 
             acc[area] = (acc[area] || 0) + 1;
             return acc;
         }, {} as Record<string, number>);
+        // Fix: Used array destructuring in the sort callback to ensure TypeScript correctly infers the types for the arithmetic operation.
         return Object.entries(weaknessCounts).sort(([, countA], [, countB]) => countB - countA)[0]?.[0] || null;
     }, [workerRecords]);
 

@@ -75,7 +75,7 @@ const createMockWorkerRecord = (id: number): WorkerRecord => {
     const strengthNative = strengthsData.vi[strengthsData.ko.indexOf(strength)];
 
     return {
-        id: `w-${id}-${date}-${name.replace(/\s/g, '')}`,
+        id: `${date}-${name}`,
         name: name,
         jobField: getRandomElement(jobFields),
         date: date,
